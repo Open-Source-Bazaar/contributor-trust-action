@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { analyzeContributor, mergeAiReview } from '../src/analyze.mjs';
+import { analyzeContributor, mergeAiReview, shouldRetainReviewLabel } from '../src/analyze.mjs';
 
 const establishedProfile = {
   login: 'example',
@@ -70,5 +70,34 @@ test('AI only changes the score when confidence is strong', () => {
   assert.equal(
     mergeAiReview(base, { classification: 'likely-automated', confidence: 0.9 }).score,
     60,
+  );
+});
+
+test('keeps review label while another contributor still needs review', () => {
+  const comments = [
+    {
+      body: '<!-- contributor-trust:risky-user -->\n**@risky-user: HIGH (80/100)**',
+    },
+    {
+      body: '<!-- contributor-trust:current-user -->\n**@current-user: HIGH (70/100)**',
+    },
+  ];
+
+  assert.equal(
+    shouldRetainReviewLabel({ author: 'current-user', level: 'low' }, comments),
+    true,
+  );
+});
+
+test('clears review label when only the current contributor is now low risk', () => {
+  const comments = [
+    {
+      body: '<!-- contributor-trust:current-user -->\n**@current-user: HIGH (70/100)**',
+    },
+  ];
+
+  assert.equal(
+    shouldRetainReviewLabel({ author: 'current-user', level: 'low' }, comments),
+    false,
   );
 });

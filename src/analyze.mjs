@@ -111,6 +111,17 @@ export function mergeAiReview(report, aiReview) {
   };
 }
 
+export function shouldRetainReviewLabel(report, comments = []) {
+  if (report.level === 'medium' || report.level === 'high') return true;
+
+  const ownMarker = `<!-- contributor-trust:${report.author} -->`;
+  return comments.some(comment => {
+    const body = String(comment.body ?? '');
+    if (!body.includes('<!-- contributor-trust:') || body.includes(ownMarker)) return false;
+    return /\*\*@[\w-]+:\s+(?:MEDIUM|HIGH)\s+\(\d+\/100\)\*\*/.test(body);
+  });
+}
+
 function buildFacts(profile, events, authoredPullRequests, authoredIssues, organizationPullRequests, now) {
   return {
     accountAgeDays: accountAgeDays(profile.created_at, now),

@@ -1,6 +1,6 @@
 import { appendFile, readFile } from 'node:fs/promises';
 
-import { analyzeContributor, mergeAiReview } from '../src/analyze.mjs';
+import { analyzeContributor, mergeAiReview, shouldRetainReviewLabel } from '../src/analyze.mjs';
 
 const token = input('github-token');
 const useAi = input('ai-review', 'true') === 'true';
@@ -177,6 +177,7 @@ async function reviewWithGitHubModels({ profile, report, target }) {
 async function syncRepositoryState(report) {
   const label = 'needs-contributor-review';
   const marker = `<!-- contributor-trust:${report.author} -->`;
+  const comments = await github(`/repos/${owner}/${repo}/issues/${report.number}/comments?per_page=100`);
   const existingLabel = await github(`/repos/${owner}/${repo}/labels/${encodeURIComponent(label)}`, {}, true);
   if (!existingLabel) {
     await github(`/repos/${owner}/${repo}/labels`, {
@@ -189,7 +190,7 @@ async function syncRepositoryState(report) {
     });
   }
 
-  const needsReview = report.level === 'medium' || report.level === 'high';
+  const needsReview = shouldRetainReviewLabel(report, comments);
   if (needsReview) {
     await github(`/repos/${owner}/${repo}/issues/${report.number}/labels`, {
       method: 'POST',
@@ -203,7 +204,6 @@ async function syncRepositoryState(report) {
     );
   }
 
-  const comments = await github(`/repos/${owner}/${repo}/issues/${report.number}/comments?per_page=100`);
   const existing = comments.find(comment => comment.body?.includes(marker));
   const body = renderComment(report, marker);
   if (existing) {
