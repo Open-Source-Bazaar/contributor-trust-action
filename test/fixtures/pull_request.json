@@ -1,0 +1,11 @@
+{
+  "pull_request": {
+    "number": 91,
+    "title": "Contributor trust action smoke test",
+    "body": "Exercises evidence collection without writing to the repository.",
+    "author_association": "NONE",
+    "user": {
+      "login": "Neroxsh"
+    }
+  }
+}
