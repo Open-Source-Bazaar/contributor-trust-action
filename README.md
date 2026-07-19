@@ -10,12 +10,12 @@ The action does not infer identity from writing style, does not treat AI disclos
 name: Contributor trust
 
 on:
-  pull_request_target:
-    types: [opened, reopened, synchronize, ready_for_review]
   issues:
     types: [opened]
   issue_comment:
     types: [created]
+  pull_request_target:
+    types: [opened]
 
 permissions:
   contents: read
@@ -24,7 +24,7 @@ permissions:
   models: read
 
 jobs:
-  report:
+  detection:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
