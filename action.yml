@@ -1,11 +1,18 @@
-name: Contributor Trust Report
-description: Review public GitHub account and contribution signals before a maintainer acts.
+name: Contributor Detection
+description: Detect high-confidence automated contributors from public GitHub evidence.
 author: Open-Source-Bazaar contributors
 
 inputs:
   github-token:
     description: GitHub token with read access and permission to comment or label.
     required: true
+  organization-token:
+    description: Optional organization token with Blocking users write permission.
+    required: false
+  block-high-confidence-automation:
+    description: Block high-confidence automated user accounts when an organization token is provided.
+    required: false
+    default: 'false'
   ai-review:
     description: Use GitHub Models for a second, evidence-grounded review.
     required: false
@@ -32,6 +39,8 @@ outputs:
     description: Numeric risk score from 0 to 100.
   report-json:
     description: Machine-readable report.
+  blocked:
+    description: Whether the contributor was blocked from the organization.
 
 runs:
   using: node24

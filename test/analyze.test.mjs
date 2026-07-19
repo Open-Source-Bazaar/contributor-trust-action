@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { analyzeContributor, mergeAiReview, shouldRetainReviewLabel } from '../src/analyze.mjs';
+import {
+  analyzeContributor,
+  mergeAiReview,
+  shouldBlockContributor,
+  shouldRetainReviewLabel,
+} from '../src/analyze.mjs';
 
 const establishedProfile = {
   login: 'example',
@@ -70,6 +75,30 @@ test('AI only changes the score when confidence is strong', () => {
   assert.equal(
     mergeAiReview(base, { classification: 'likely-automated', confidence: 0.9 }).score,
     60,
+  );
+});
+
+test('blocks only high-confidence automated user accounts', () => {
+  assert.equal(
+    shouldBlockContributor({
+      profile: { login: 'agent[bot]', type: 'Bot' },
+      report: { level: 'high', trusted: false },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldBlockContributor({
+      profile: { login: 'sparse-user', type: 'User' },
+      report: { level: 'high', trusted: false, aiReview: { classification: 'inconclusive', confidence: 0.95 } },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldBlockContributor({
+      profile: { login: 'automated-user', type: 'User' },
+      report: { level: 'high', trusted: false, aiReview: { classification: 'likely-automated', confidence: 0.9 } },
+    }),
+    true,
   );
 });
 

@@ -1,8 +1,15 @@
 import { appendFile, readFile } from 'node:fs/promises';
 
-import { analyzeContributor, mergeAiReview, shouldRetainReviewLabel } from '../src/analyze.mjs';
+import {
+  analyzeContributor,
+  mergeAiReview,
+  shouldBlockContributor,
+  shouldRetainReviewLabel,
+} from '../src/analyze.mjs';
 
 const token = input('github-token');
+const organizationToken = input('organization-token');
+const blockHighConfidenceAutomation = input('block-high-confidence-automation', 'false') === 'true';
 const useAi = input('ai-review', 'true') === 'true';
 const model = input('model', 'openai/gpt-4.1');
 const shouldComment = input('comment', 'true') === 'true';
@@ -46,11 +53,13 @@ if (useAi && !report.trusted && profile.type !== 'Bot') {
   }
 }
 
+const blocked = await blockContributorIfConfigured({ profile, report, target });
 const finalReport = {
   author: target.login,
   subject: target.kind,
   number: target.number,
   ...report,
+  blocked,
   aiError: aiError || undefined,
 };
 
@@ -60,10 +69,11 @@ await output('author', target.login);
 await output('risk-level', report.level);
 await output('risk-score', String(report.score));
 await output('report-json', JSON.stringify(finalReport));
+await output('blocked', String(blocked));
 
 if (failOnHighRisk && report.level === 'high') {
   process.exitCode = 1;
-  console.error(`Contributor report for @${target.login} is high risk (${report.score}/100).`);
+  console.error(`Contributor detection for @${target.login} is high risk (${report.score}/100).`);
 }
 
 function input(name, fallback = '') {
@@ -114,6 +124,30 @@ async function github(path, options = {}, allowNotFound = false) {
   if (allowNotFound && response.status === 404) return null;
   if (!response.ok) throw new Error(`${options.method ?? 'GET'} ${path}: ${response.status}`);
   return response.status === 204 ? null : response.json();
+}
+
+async function organizationGithub(path, options = {}) {
+  const response = await fetch(`https://api.github.com${path}`, {
+    ...options,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${organizationToken}`,
+      'X-GitHub-Api-Version': '2026-03-10',
+      ...options.headers,
+    },
+  });
+  if (!response.ok) throw new Error(`${options.method ?? 'GET'} ${path}: ${response.status}`);
+  return response.status === 204 ? null : response.json();
+}
+
+async function blockContributorIfConfigured({ profile, report, target }) {
+  if (!blockHighConfidenceAutomation || !organizationToken) return false;
+  if (!shouldBlockContributor({ profile, report })) return false;
+
+  await organizationGithub(`/orgs/${encodeURIComponent(owner)}/blocks/${encodeURIComponent(target.login)}`, {
+    method: 'PUT',
+  });
+  return true;
 }
 
 async function reviewWithGitHubModels({ profile, report, target }) {
@@ -228,7 +262,7 @@ function renderComment(report, marker) {
       ? '\n### AI review\n\nUnavailable; the evidence-only report remains valid.'
       : '';
   return `${marker}
-## Contributor trust report
+## Contributor detection
 
 **@${report.author}: ${report.level.toUpperCase()} (${report.score}/100)**
 
@@ -244,14 +278,16 @@ function renderComment(report, marker) {
 
 ${reasons}${ai}
 
-This report uses public signals to prioritize human review. It is not proof that a contributor used automation, and it never blocks an account automatically.`;
+Blocking result: **${report.blocked ? 'blocked from the organization' : 'not blocked'}**.
+
+This detection uses public evidence to prioritize human review. Sparse-account signals and GitHub App bot status alone never trigger blocking; blocking requires a high-confidence likely-automated classification for a user account.`;
 }
 
 async function writeSummary(report) {
   if (!process.env.GITHUB_STEP_SUMMARY) return;
   await appendFile(
     process.env.GITHUB_STEP_SUMMARY,
-    `## Contributor trust report\n\n- Author: @${report.author}\n- Risk: ${report.level} (${report.score}/100)\n- Subject: ${report.subject} #${report.number}\n`,
+    `## Contributor detection\n\n- Author: @${report.author}\n- Risk: ${report.level} (${report.score}/100)\n- Subject: ${report.subject} #${report.number}\n- Blocked: ${report.blocked}\n`,
   );
 }
 

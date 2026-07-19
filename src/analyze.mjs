@@ -122,6 +122,12 @@ export function shouldRetainReviewLabel(report, comments = []) {
   });
 }
 
+export function shouldBlockContributor({ profile, report }) {
+  if (report.trusted || report.level !== 'high') return false;
+  if (profile.type === 'Bot' || /\[bot\]$/i.test(profile.login ?? '')) return false;
+  return report.aiReview?.classification === 'likely-automated' && report.aiReview.confidence >= 0.9;
+}
+
 function buildFacts(profile, events, authoredPullRequests, authoredIssues, organizationPullRequests, now) {
   return {
     accountAgeDays: accountAgeDays(profile.created_at, now),
