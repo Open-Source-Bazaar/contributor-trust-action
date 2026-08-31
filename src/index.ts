@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
-import { analyzeContributor, FinalContributorReport, mergeAiReview } from './analyze.ts';
+import { analyzeContributor, mergeAiReview } from './analyze.ts';
+import { GitHubProfile, FinalContributorReport } from './type.ts';
 import {
   blockContributorIfConfigured,
   github,
@@ -29,16 +30,16 @@ const payload = JSON.parse(await readFile(eventPath, 'utf8')) as Record<string, 
 const target = resolveTarget(payload);
 const encodedLogin = encodeURIComponent(target.login);
 
-const [profile, events, pullSearch, issueSearch, organizationSearch] = (await Promise.all([
-  github(token, `/users/${encodedLogin}`),
-  github(token, `/users/${encodedLogin}/events/public?${new URLSearchParams({ per_page: '100' })}`),
-  github(token, `/search/issues?${new URLSearchParams({ q: `type:pr author:${target.login}`, per_page: '1' })}`),
-  github(token, `/search/issues?${new URLSearchParams({ q: `type:issue author:${target.login}`, per_page: '1' })}`),
-  github(token, `/search/issues?${new URLSearchParams({ q: `type:pr org:${owner} author:${target.login}`, per_page: '1' })}`),
-])) as [Record<string, unknown>, unknown[], { total_count: number }, { total_count: number }, { total_count: number }];
+const [profile, events, pullSearch, issueSearch, organizationSearch] = await Promise.all([
+  github<GitHubProfile>(token, `/users/${encodedLogin}`),
+  github<unknown[]>(token, `/users/${encodedLogin}/events/public?${new URLSearchParams({ per_page: '100' })}`),
+  github<{ total_count: number }>(token, `/search/issues?${new URLSearchParams({ q: `type:pr author:${target.login}`, per_page: '1' })}`),
+  github<{ total_count: number }>(token, `/search/issues?${new URLSearchParams({ q: `type:issue author:${target.login}`, per_page: '1' })}`),
+  github<{ total_count: number }>(token, `/search/issues?${new URLSearchParams({ q: `type:pr org:${owner} author:${target.login}`, per_page: '1' })}`),
+]);
 
 let report = analyzeContributor({
-  profile: profile as Parameters<typeof analyzeContributor>[0]['profile'],
+  profile,
   events,
   authoredPullRequests: pullSearch.total_count,
   authoredIssues: issueSearch.total_count,
@@ -53,13 +54,7 @@ if (useAi && !report.trusted && profile.type !== 'Bot')
   try {
     report = mergeAiReview(
       report,
-      await reviewWithGitHubModels({
-        token,
-        profile: profile as Parameters<typeof reviewWithGitHubModels>[0]['profile'],
-        report,
-        target,
-        model,
-      }),
+      await reviewWithGitHubModels({ token, profile, report, target, model }),
     );
   } catch (error) {
     aiError = (error as Error).message;
@@ -69,7 +64,7 @@ if (useAi && !report.trusted && profile.type !== 'Bot')
 const blocked = await blockContributorIfConfigured({
   token,
   owner,
-  profile: profile as Parameters<typeof blockContributorIfConfigured>[0]['profile'],
+  profile,
   report,
   target,
   blockHighConfidenceAutomation,

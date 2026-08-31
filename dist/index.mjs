@@ -4,10 +4,10 @@ import { readFile } from "node:fs/promises";
 // src/analyze.ts
 var trustedAssociations = /* @__PURE__ */ new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 var clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
-function accountAgeDays(createdAt, now) {
+var accountAgeDays = (createdAt, now) => {
   const created = new Date(createdAt).getTime();
   return Number.isFinite(created) ? Math.max(0, Math.floor((now.getTime() - created) / 864e5)) : 0;
-}
+};
 function analyzeContributor({
   profile: profile2,
   events: events2 = [],
@@ -129,11 +129,18 @@ function buildFacts(profile2, events2, authoredPullRequests, authoredIssues, org
 
 // src/utility.ts
 import { appendFile } from "node:fs/promises";
-function input(name, fallback = "") {
-  return process.env[`INPUT_${name.toUpperCase().replaceAll("-", "_")}`] ?? fallback;
+var input = (name, fallback = "") => process.env[`INPUT_${name.toUpperCase().replaceAll("-", "_")}`] ?? fallback;
+function isPullRequestEvent(event) {
+  return "pull_request" in event && event.pull_request != null;
+}
+function isIssueCommentEvent(event) {
+  return "comment" in event && "issue" in event && event.comment != null && event.issue != null;
+}
+function isIssueEvent(event) {
+  return "issue" in event && event.issue != null;
 }
 function resolveTarget(event) {
-  if (event.pull_request) {
+  if (isPullRequestEvent(event)) {
     const pr = event.pull_request;
     return {
       kind: "pull request",
@@ -144,9 +151,8 @@ function resolveTarget(event) {
 ${pr.body ?? ""}`
     };
   }
-  if (event.comment && event.issue) {
-    const comment = event.comment;
-    const issue = event.issue;
+  if (isIssueCommentEvent(event)) {
+    const { comment, issue } = event;
     return {
       kind: "issue comment",
       number: issue.number,
@@ -155,8 +161,8 @@ ${pr.body ?? ""}`
       content: comment.body ?? ""
     };
   }
-  if (event.issue) {
-    const issue = event.issue;
+  if (isIssueEvent(event)) {
+    const { issue } = event;
     return {
       kind: "issue",
       number: issue.number,
@@ -178,9 +184,10 @@ async function github(token2, path, options = {}, allowNotFound = false) {
       ...options.headers
     }
   });
-  if (allowNotFound && response.status === 404) return null;
+  if (allowNotFound && response.status === 404) return void 0;
   if (!response.ok) throw new Error(`${options.method ?? "GET"} ${path}: ${response.status}`);
-  return response.status === 204 ? null : response.json();
+  if (response.status !== 204) return response.json();
+  return void 0;
 }
 async function blockContributorIfConfigured({
   token: token2,
@@ -289,7 +296,7 @@ async function syncRepositoryState(token2, owner2, repo2, report2) {
       true
     );
   }
-  const existing = comments.find((comment) => comment.body?.includes(marker));
+  const existing = comments.find(({ body: body2 }) => body2?.includes(marker));
   const body = renderComment(report2, marker);
   if (existing) {
     await github(token2, `/repos/${owner2}/${repo2}/issues/comments/${existing.id}`, {
@@ -391,13 +398,7 @@ if (useAi && !report.trusted && profile.type !== "Bot")
   try {
     report = mergeAiReview(
       report,
-      await reviewWithGitHubModels({
-        token,
-        profile,
-        report,
-        target,
-        model
-      })
+      await reviewWithGitHubModels({ token, profile, report, target, model })
     );
   } catch (error) {
     aiError = error.message;

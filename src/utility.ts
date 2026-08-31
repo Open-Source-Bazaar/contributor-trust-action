@@ -1,60 +1,89 @@
 import { appendFile } from 'node:fs/promises';
 
-import { ContributorReport, FinalContributorReport, GitHubProfile, shouldBlockContributor, shouldRetainReviewLabel } from './analyze.ts';
+import { shouldBlockContributor, shouldRetainReviewLabel } from './analyze.ts';
+import {
+  AiReview,
+  ContributorReport,
+  ContributorTarget,
+  FinalContributorReport,
+  GitHubProfile,
+  IssueCommentPayload,
+  IssuePayload,
+  PullRequestPayload,
+} from './type.ts';
 
-export interface ContributorTarget {
-  kind: string;
-  number: number;
-  login: string;
-  association: string;
-  content: string;
+export const input = (name: string, fallback = '') =>
+  process.env[`INPUT_${name.toUpperCase().replaceAll('-', '_')}`] ?? fallback;
+
+function isPullRequestEvent(event: Record<string, unknown>): event is PullRequestPayload {
+  return 'pull_request' in event && event.pull_request != null;
 }
 
-export function input(name: string, fallback = ''): string {
-  return process.env[`INPUT_${name.toUpperCase().replaceAll('-', '_')}`] ?? fallback;
+function isIssueCommentEvent(event: Record<string, unknown>): event is IssueCommentPayload {
+  return 'comment' in event && 'issue' in event && event.comment != null && event.issue != null;
+}
+
+function isIssueEvent(event: Record<string, unknown>): event is IssuePayload {
+  return 'issue' in event && event.issue != null;
 }
 
 export function resolveTarget(event: Record<string, unknown>): ContributorTarget {
-  if (event.pull_request) {
-    const pr = event.pull_request as Record<string, unknown>;
+  if (isPullRequestEvent(event)) {
+    const pr = event.pull_request;
     return {
       kind: 'pull request',
-      number: pr.number as number,
-      login: (pr.user as Record<string, string>).login,
+      number: pr.number,
+      login: pr.user.login,
       association: (pr.author_association as string) ?? 'NONE',
-      content: `${(pr.title as string) ?? ''}\n${(pr.body as string) ?? ''}`,
+      content: `${pr.title ?? ''}\n${pr.body ?? ''}`,
     };
   }
-  if (event.comment && event.issue) {
-    const comment = event.comment as Record<string, unknown>;
-    const issue = event.issue as Record<string, unknown>;
+  if (isIssueCommentEvent(event)) {
+    const { comment, issue } = event;
     return {
       kind: 'issue comment',
-      number: issue.number as number,
-      login: (comment.user as Record<string, string>).login,
+      number: issue.number,
+      login: comment.user.login,
       association: (comment.author_association as string) ?? 'NONE',
-      content: (comment.body as string) ?? '',
+      content: comment.body ?? '',
     };
   }
-  if (event.issue) {
-    const issue = event.issue as Record<string, unknown>;
+  if (isIssueEvent(event)) {
+    const { issue } = event;
     return {
       kind: 'issue',
-      number: issue.number as number,
-      login: (issue.user as Record<string, string>).login,
+      number: issue.number,
+      login: issue.user.login,
       association: (issue.author_association as string) ?? 'NONE',
-      content: `${(issue.title as string) ?? ''}\n${(issue.body as string) ?? ''}`,
+      content: `${issue.title ?? ''}\n${issue.body ?? ''}`,
     };
   }
   throw new Error(`Unsupported event payload: ${process.env.GITHUB_EVENT_NAME ?? 'unknown'}`);
 }
 
-export async function github(
+interface BlockContributorOptions {
+  token: string;
+  owner: string;
+  profile: GitHubProfile;
+  report: ContributorReport;
+  target: ContributorTarget;
+  blockHighConfidenceAutomation: boolean;
+}
+
+interface ReviewWithGitHubModelsOptions {
+  token: string;
+  profile: GitHubProfile;
+  report: ContributorReport;
+  target: ContributorTarget;
+  model: string;
+}
+
+export async function github<T>(
   token: string,
   path: string,
   options: RequestInit = {},
   allowNotFound = false,
-): Promise<unknown> {
+): Promise<T> {
   const response = await fetch(`https://api.github.com${path}`, {
     ...options,
     headers: {
@@ -64,9 +93,12 @@ export async function github(
       ...options.headers,
     },
   });
-  if (allowNotFound && response.status === 404) return null;
+  if (allowNotFound && response.status === 404) return undefined as T;
+
   if (!response.ok) throw new Error(`${(options.method ?? 'GET')} ${path}: ${response.status}`);
-  return response.status === 204 ? null : response.json();
+
+  if (response.status !== 204) return response.json() as Promise<T>;
+  return undefined as T;
 }
 
 export async function blockContributorIfConfigured({
@@ -76,18 +108,11 @@ export async function blockContributorIfConfigured({
   report,
   target,
   blockHighConfidenceAutomation,
-}: {
-  token: string;
-  owner: string;
-  profile: GitHubProfile;
-  report: ContributorReport;
-  target: ContributorTarget;
-  blockHighConfidenceAutomation: boolean;
-}): Promise<boolean> {
+}: BlockContributorOptions): Promise<boolean> {
   if (!blockHighConfidenceAutomation) return false;
   if (!shouldBlockContributor({ profile, report })) return false;
 
-  await github(token, `/orgs/${encodeURIComponent(owner)}/blocks/${encodeURIComponent(target.login)}`, {
+  await github<void>(token, `/orgs/${encodeURIComponent(owner)}/blocks/${encodeURIComponent(target.login)}`, {
     method: 'PUT',
   });
   return true;
@@ -99,13 +124,7 @@ export async function reviewWithGitHubModels({
   report,
   target,
   model,
-}: {
-  token: string;
-  profile: GitHubProfile;
-  report: ContributorReport;
-  target: ContributorTarget;
-  model: string;
-}) {
+}: ReviewWithGitHubModelsOptions): Promise<AiReview> {
   const response = await fetch('https://models.github.ai/inference/chat/completions', {
     method: 'POST',
     headers: {
@@ -150,13 +169,16 @@ export async function reviewWithGitHubModels({
     }),
   });
   if (!response.ok) throw new Error(`GitHub Models returned ${response.status}`);
+
   const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
   const text = data.choices?.[0]?.message?.content ?? '';
   const parsed = JSON.parse(text.replace(/^```json\s*|\s*```$/g, '')) as Record<string, unknown>;
   const classifications = new Set(['likely-human', 'inconclusive', 'likely-automated']);
+
   if (!classifications.has(parsed.classification as string)) throw new Error('GitHub Models returned an invalid classification');
+
   return {
-    classification: parsed.classification as 'likely-human' | 'inconclusive' | 'likely-automated',
+    classification: parsed.classification as AiReview['classification'],
     confidence: Math.min(1, Math.max(0, Number(parsed.confidence) || 0)),
     reasons: Array.isArray(parsed.reasons) ? (parsed.reasons as unknown[]).slice(0, 5).map(String) : [],
     recommendation: String(parsed.recommendation ?? ''),
@@ -171,10 +193,10 @@ export async function syncRepositoryState(
 ): Promise<void> {
   const label = 'needs-contributor-review';
   const marker = `<!-- contributor-trust:${report.author} -->`;
-  const comments = await github(token, `/repos/${owner}/${repo}/issues/${report.number}/comments?per_page=100`) as Array<{ id: number; body?: string }>;
-  const existingLabel = await github(token, `/repos/${owner}/${repo}/labels/${encodeURIComponent(label)}`, {}, true);
+  const comments = await github<Array<{ id: number; body?: string }>>(token, `/repos/${owner}/${repo}/issues/${report.number}/comments?per_page=100`);
+  const existingLabel = await github<unknown>(token, `/repos/${owner}/${repo}/labels/${encodeURIComponent(label)}`, {}, true);
   if (!existingLabel) {
-    await github(token, `/repos/${owner}/${repo}/labels`, {
+    await github<void>(token, `/repos/${owner}/${repo}/labels`, {
       method: 'POST',
       body: JSON.stringify({
         name: label,
@@ -186,12 +208,12 @@ export async function syncRepositoryState(
 
   const needsReview = shouldRetainReviewLabel(report, comments);
   if (needsReview) {
-    await github(token, `/repos/${owner}/${repo}/issues/${report.number}/labels`, {
+    await github<void>(token, `/repos/${owner}/${repo}/issues/${report.number}/labels`, {
       method: 'POST',
       body: JSON.stringify({ labels: [label] }),
     });
   } else {
-    await github(
+    await github<void>(
       token,
       `/repos/${owner}/${repo}/issues/${report.number}/labels/${encodeURIComponent(label)}`,
       { method: 'DELETE' },
@@ -199,15 +221,15 @@ export async function syncRepositoryState(
     );
   }
 
-  const existing = comments.find(comment => comment.body?.includes(marker));
+  const existing = comments.find(({ body }) => body?.includes(marker));
   const body = renderComment(report, marker);
   if (existing) {
-    await github(token, `/repos/${owner}/${repo}/issues/comments/${existing.id}`, {
+    await github<void>(token, `/repos/${owner}/${repo}/issues/comments/${existing.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ body }),
     });
   } else {
-    await github(token, `/repos/${owner}/${repo}/issues/${report.number}/comments`, {
+    await github<void>(token, `/repos/${owner}/${repo}/issues/${report.number}/comments`, {
       method: 'POST',
       body: JSON.stringify({ body }),
     });

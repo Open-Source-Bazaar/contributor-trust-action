@@ -1,76 +1,40 @@
+import {
+  AiReview,
+  AnalyzeContributorOptions,
+  ContributorFacts,
+  ContributorReport,
+  ContributorTarget,
+  FinalContributorReport,
+  GitHubProfile,
+  IssueCommentPayload,
+  IssuePayload,
+  PullRequestPayload,
+  WebhookEventPayload,
+} from './type.ts';
+
+export type {
+  AiReview,
+  AnalyzeContributorOptions,
+  ContributorFacts,
+  ContributorReport,
+  ContributorTarget,
+  FinalContributorReport,
+  GitHubProfile,
+  IssueCommentPayload,
+  IssuePayload,
+  PullRequestPayload,
+  WebhookEventPayload,
+};
+
 const trustedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));
 
-function accountAgeDays(createdAt: string, now: Date): number {
+const accountAgeDays = (createdAt: string, now: Date) => {
   const created = new Date(createdAt).getTime();
   return Number.isFinite(created) ? Math.max(0, Math.floor((now.getTime() - created) / 86_400_000)) : 0;
-}
-
-export interface GitHubProfile {
-  login: string;
-  type: string;
-  created_at: string;
-  public_repos?: number;
-  followers?: number;
-  following?: number;
-  name?: string;
-  bio?: string;
-  company?: string;
-  blog?: string;
-  location?: string;
-}
-
-export interface ContributorFacts {
-  accountAgeDays: number;
-  publicRepositories: number;
-  followers: number;
-  following: number;
-  recentPublicEvents: number;
-  authoredPullRequests: number;
-  authoredIssues: number;
-  organizationPullRequests: number;
-}
-
-export interface ContributorReport {
-  score: number;
-  level: 'low' | 'medium' | 'high';
-  trusted: boolean;
-  reasons: string[];
-  facts: ContributorFacts;
-  author?: string;
-  subject?: string;
-  number?: number;
-  blocked?: boolean;
-  aiReview?: AiReview;
-  aiError?: string;
-}
-
-export interface FinalContributorReport extends ContributorReport {
-  author: string;
-  subject: string;
-  number: number;
-  blocked: boolean;
-}
-
-export interface AiReview {
-  classification: 'likely-human' | 'inconclusive' | 'likely-automated';
-  confidence: number;
-  reasons: string[];
-  recommendation: string;
-}
-
-export interface AnalyzeContributorOptions {
-  profile: GitHubProfile;
-  events?: unknown[];
-  authoredPullRequests?: number;
-  authoredIssues?: number;
-  organizationPullRequests?: number;
-  association?: string;
-  content?: string;
-  now?: Date;
-}
+};
 
 export function analyzeContributor({
   profile,
@@ -159,7 +123,7 @@ export function analyzeContributor({
   };
 }
 
-export function mergeAiReview(report: ContributorReport, aiReview: AiReview | null | undefined): ContributorReport {
+export function mergeAiReview(report: ContributorReport, aiReview?: AiReview): ContributorReport {
   if (!aiReview) return report;
 
   let score = report.score;
@@ -175,7 +139,7 @@ export function mergeAiReview(report: ContributorReport, aiReview: AiReview | nu
   };
 }
 
-export function shouldRetainReviewLabel(report: Pick<ContributorReport, 'level' | 'author'>, comments: Array<{ body?: string }> = []): boolean {
+export function shouldRetainReviewLabel(report: Pick<ContributorReport, 'level' | 'author'>, comments: { body?: string }[] = []): boolean {
   if (report.level === 'medium' || report.level === 'high') return true;
 
   const ownMarker = `<!-- contributor-trust:${report.author} -->`;
