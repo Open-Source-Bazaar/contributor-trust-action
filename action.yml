@@ -4,19 +4,16 @@ author: Open-Source-Bazaar contributors
 
 inputs:
   github-token:
-    description: GitHub token with read access and permission to comment or label.
+    description: GitHub token with read access, permission to comment or label, and optionally organization Blocking users write permission.
     required: true
-  organization-token:
-    description: Optional organization token with Blocking users write permission.
-    required: false
   block-high-confidence-automation:
-    description: Block high-confidence automated user accounts when an organization token is provided.
+    description: Block high-confidence automated user accounts when the token has organization Blocking users write permission.
     required: false
-    default: 'false'
+    default: false
   ai-review:
     description: Use GitHub Models for a second, evidence-grounded review.
     required: false
-    default: 'true'
+    default: true
   model:
     description: GitHub Models model identifier.
     required: false
@@ -24,11 +21,11 @@ inputs:
   comment:
     description: Create or update the contributor report comment.
     required: false
-    default: 'true'
+    default: true
   fail-on-high-risk:
-    description: Fail the workflow when the report is high risk.
+    description: Report a workflow error when the contributor is high risk.
     required: false
-    default: 'false'
+    default: false
 
 outputs:
   author:

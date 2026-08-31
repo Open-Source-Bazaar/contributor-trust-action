@@ -6,7 +6,7 @@ import {
   mergeAiReview,
   shouldBlockContributor,
   shouldRetainReviewLabel,
-} from '../src/analyze.mjs';
+} from '../src/analyze.ts';
 
 const establishedProfile = {
   login: 'example',
@@ -67,13 +67,13 @@ test('repository members bypass scoring', () => {
 });
 
 test('AI only changes the score when confidence is strong', () => {
-  const base = { score: 40, level: 'medium', reasons: [], facts: {} };
+  const base = { score: 40, level: 'medium' as const, trusted: false, reasons: [], facts: {} as ReturnType<typeof analyzeContributor>['facts'] };
   assert.equal(
-    mergeAiReview(base, { classification: 'likely-automated', confidence: 0.5 }).score,
+    mergeAiReview(base, { classification: 'likely-automated', confidence: 0.5, reasons: [], recommendation: '' }).score,
     40,
   );
   assert.equal(
-    mergeAiReview(base, { classification: 'likely-automated', confidence: 0.9 }).score,
+    mergeAiReview(base, { classification: 'likely-automated', confidence: 0.9, reasons: [], recommendation: '' }).score,
     60,
   );
 });
@@ -81,22 +81,22 @@ test('AI only changes the score when confidence is strong', () => {
 test('blocks only high-confidence automated user accounts', () => {
   assert.equal(
     shouldBlockContributor({
-      profile: { login: 'agent[bot]', type: 'Bot' },
-      report: { level: 'high', trusted: false },
+      profile: { login: 'agent[bot]', type: 'Bot', created_at: '' },
+      report: { level: 'high', trusted: false, score: 100, reasons: [], facts: {} as ReturnType<typeof analyzeContributor>['facts'] },
     }),
     false,
   );
   assert.equal(
     shouldBlockContributor({
-      profile: { login: 'sparse-user', type: 'User' },
-      report: { level: 'high', trusted: false, aiReview: { classification: 'inconclusive', confidence: 0.95 } },
+      profile: { login: 'sparse-user', type: 'User', created_at: '' },
+      report: { level: 'high', trusted: false, score: 80, reasons: [], facts: {} as ReturnType<typeof analyzeContributor>['facts'], aiReview: { classification: 'inconclusive', confidence: 0.95, reasons: [], recommendation: '' } },
     }),
     false,
   );
   assert.equal(
     shouldBlockContributor({
-      profile: { login: 'automated-user', type: 'User' },
-      report: { level: 'high', trusted: false, aiReview: { classification: 'likely-automated', confidence: 0.9 } },
+      profile: { login: 'automated-user', type: 'User', created_at: '' },
+      report: { level: 'high', trusted: false, score: 80, reasons: [], facts: {} as ReturnType<typeof analyzeContributor>['facts'], aiReview: { classification: 'likely-automated', confidence: 0.9, reasons: [], recommendation: '' } },
     }),
     true,
   );
