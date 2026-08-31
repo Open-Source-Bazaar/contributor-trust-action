@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import { analyzeContributor, mergeAiReview } from './analyze.ts';
+import { analyzeContributor, FinalContributorReport, mergeAiReview } from './analyze.ts';
 import {
   blockContributorIfConfigured,
   github,
@@ -74,7 +74,7 @@ const blocked = await blockContributorIfConfigured({
   target,
   blockHighConfidenceAutomation,
 });
-const finalReport = {
+const finalReport: FinalContributorReport = {
   author: target.login,
   subject: target.kind,
   number: target.number,

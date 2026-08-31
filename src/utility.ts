@@ -1,6 +1,6 @@
 import { appendFile } from 'node:fs/promises';
 
-import { ContributorReport, GitHubProfile, shouldBlockContributor, shouldRetainReviewLabel } from './analyze.ts';
+import { ContributorReport, FinalContributorReport, GitHubProfile, shouldBlockContributor, shouldRetainReviewLabel } from './analyze.ts';
 
 export interface ContributorTarget {
   kind: string;
@@ -167,7 +167,7 @@ export async function syncRepositoryState(
   token: string,
   owner: string,
   repo: string,
-  report: ContributorReport,
+  report: FinalContributorReport,
 ): Promise<void> {
   const label = 'needs-contributor-review';
   const marker = `<!-- contributor-trust:${report.author} -->`;
@@ -214,8 +214,8 @@ export async function syncRepositoryState(
   }
 }
 
-export function renderComment(report: ContributorReport, marker: string): string {
-  const facts = report.facts!;
+export function renderComment(report: FinalContributorReport, marker: string): string {
+  const facts = report.facts;
   const reasons = report.reasons.length ? report.reasons.map(reason => `- ${reason}`).join('\n') : '- No heuristic warnings.';
   const ai = report.aiReview
     ? `\n### AI review\n\n- Classification: **${report.aiReview.classification}** (${Math.round(report.aiReview.confidence * 100)}% confidence)\n- Recommendation: ${report.aiReview.recommendation || 'No recommendation.'}\n${report.aiReview.reasons.map(reason => `- ${reason}`).join('\n')}`
@@ -244,7 +244,7 @@ Blocking result: **${report.blocked ? 'blocked from the organization' : 'not blo
 This detection uses public evidence to prioritize human review. Sparse-account signals and GitHub App bot status alone never trigger blocking; blocking requires a high-confidence likely-automated classification for a user account.`;
 }
 
-export async function writeSummary(report: ContributorReport): Promise<void> {
+export async function writeSummary(report: FinalContributorReport): Promise<void> {
   if (!process.env.GITHUB_STEP_SUMMARY) return;
   await appendFile(
     process.env.GITHUB_STEP_SUMMARY,

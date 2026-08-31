@@ -47,6 +47,13 @@ export interface ContributorReport {
   aiError?: string;
 }
 
+export interface FinalContributorReport extends ContributorReport {
+  author: string;
+  subject: string;
+  number: number;
+  blocked: boolean;
+}
+
 export interface AiReview {
   classification: 'likely-human' | 'inconclusive' | 'likely-automated';
   confidence: number;
