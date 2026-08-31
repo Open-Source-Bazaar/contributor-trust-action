@@ -1,0 +1,13 @@
+{
+  "name": "contributor-trust-action",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "LGPL-2.1-only",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

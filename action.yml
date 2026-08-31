@@ -1,0 +1,51 @@
+name: Contributor Detection
+description: Detect high-confidence automated contributors from public GitHub evidence.
+author: Open-Source-Bazaar contributors
+
+inputs:
+  github-token:
+    description: GitHub token with read access and permission to comment or label.
+    required: true
+  organization-token:
+    description: Optional organization token with Blocking users write permission.
+    required: false
+  block-high-confidence-automation:
+    description: Block high-confidence automated user accounts when an organization token is provided.
+    required: false
+    default: 'false'
+  ai-review:
+    description: Use GitHub Models for a second, evidence-grounded review.
+    required: false
+    default: 'true'
+  model:
+    description: GitHub Models model identifier.
+    required: false
+    default: openai/gpt-4.1
+  comment:
+    description: Create or update the contributor report comment.
+    required: false
+    default: 'true'
+  fail-on-high-risk:
+    description: Fail the workflow when the report is high risk.
+    required: false
+    default: 'false'
+
+outputs:
+  author:
+    description: Contributor login that was inspected.
+  risk-level:
+    description: low, medium, or high.
+  risk-score:
+    description: Numeric risk score from 0 to 100.
+  report-json:
+    description: Machine-readable report.
+  blocked:
+    description: Whether the contributor was blocked from the organization.
+
+runs:
+  using: node24
+  main: dist/index.mjs
+
+branding:
+  icon: shield
+  color: blue
