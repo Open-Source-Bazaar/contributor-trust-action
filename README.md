@@ -11,11 +11,14 @@ name: Contributor detection
 
 on:
   issues:
-    types: [opened]
+    types: 
+      - opened
   issue_comment:
-    types: [created]
+    types: 
+      - created
   pull_request_target:
-    types: [opened]
+    types: 
+      - opened
 
 permissions:
   contents: read
@@ -30,9 +33,8 @@ jobs:
     steps:
       - uses: Open-Source-Bazaar/contributor-trust-action@v1
         with:
-          github-token: ${{ github.token }}
-          organization-token: ${{ secrets.PAT }}
-          block-high-confidence-automation: 'true'
+          github-token: ${{ secrets.PAT }}
+          block-high-confidence-automation: true
 ```
 
 The action never checks out or executes code from an external pull request. GitHub Models is best-effort: if Models is disabled, the public-evidence report still completes.
@@ -45,6 +47,6 @@ The action never checks out or executes code from an external pull request. GitH
 - `report-json`
 - `blocked`: `true` when the organization block request succeeded
 
-Set `fail-on-high-risk: 'true'` only after reviewing the action against your community's contribution patterns.
+Set `fail-on-high-risk: true` only after reviewing the action against your community's contribution patterns.
 
-`organization-token` must be a dedicated fine-grained PAT or GitHub App token with organization `Blocking users: write`. Keep blocking disabled when that permission is not intentionally configured.
+When `block-high-confidence-automation` is enabled, `github-token` must be a dedicated fine-grained PAT or GitHub App token with organization `Blocking users: write`. Keep blocking disabled when that permission is not intentionally configured.

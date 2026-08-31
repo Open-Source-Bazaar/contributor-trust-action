@@ -1,13 +1,40 @@
+import {
+  AiReview,
+  AnalyzeContributorOptions,
+  ContributorFacts,
+  ContributorReport,
+  ContributorTarget,
+  FinalContributorReport,
+  GitHubProfile,
+  IssueCommentPayload,
+  IssuePayload,
+  PullRequestPayload,
+  WebhookEventPayload,
+} from './type.ts';
+
+export type {
+  AiReview,
+  AnalyzeContributorOptions,
+  ContributorFacts,
+  ContributorReport,
+  ContributorTarget,
+  FinalContributorReport,
+  GitHubProfile,
+  IssueCommentPayload,
+  IssuePayload,
+  PullRequestPayload,
+  WebhookEventPayload,
+};
+
 const trustedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
-function clamp(value, minimum, maximum) {
-  return Math.min(maximum, Math.max(minimum, value));
-}
+const clamp = (value: number, minimum: number, maximum: number) =>
+  Math.min(maximum, Math.max(minimum, value));
 
-function accountAgeDays(createdAt, now) {
+const accountAgeDays = (createdAt: string, now: Date) => {
   const created = new Date(createdAt).getTime();
   return Number.isFinite(created) ? Math.max(0, Math.floor((now.getTime() - created) / 86_400_000)) : 0;
-}
+};
 
 export function analyzeContributor({
   profile,
@@ -18,7 +45,7 @@ export function analyzeContributor({
   association = 'NONE',
   content = '',
   now = new Date(),
-}) {
+}: AnalyzeContributorOptions): ContributorReport {
   if (trustedAssociations.has(association)) {
     return {
       score: 0,
@@ -29,7 +56,7 @@ export function analyzeContributor({
     };
   }
 
-  const reasons = [];
+  const reasons: string[] = [];
   let score = 0;
   const ageDays = accountAgeDays(profile.created_at, now);
   const isBot = profile.type === 'Bot' || /\[bot\]$/i.test(profile.login ?? '');
@@ -52,7 +79,7 @@ export function analyzeContributor({
     if (profile.public_repos === 0) {
       score += 15;
       reasons.push('Account has no public repositories.');
-    } else if (profile.public_repos <= 2) {
+    } else if ((profile.public_repos ?? 0) <= 2) {
       score += 7;
       reasons.push(`Account has ${profile.public_repos} public repositories.`);
     }
@@ -86,6 +113,7 @@ export function analyzeContributor({
   }
 
   score = clamp(score, 0, 100);
+
   return {
     score,
     level: score >= 55 ? 'high' : score >= 30 ? 'medium' : 'low',
@@ -95,7 +123,7 @@ export function analyzeContributor({
   };
 }
 
-export function mergeAiReview(report, aiReview) {
+export function mergeAiReview(report: ContributorReport, aiReview?: AiReview): ContributorReport {
   if (!aiReview) return report;
 
   let score = report.score;
@@ -111,7 +139,7 @@ export function mergeAiReview(report, aiReview) {
   };
 }
 
-export function shouldRetainReviewLabel(report, comments = []) {
+export function shouldRetainReviewLabel(report: Pick<ContributorReport, 'level' | 'author'>, comments: { body?: string }[] = []): boolean {
   if (report.level === 'medium' || report.level === 'high') return true;
 
   const ownMarker = `<!-- contributor-trust:${report.author} -->`;
@@ -122,13 +150,20 @@ export function shouldRetainReviewLabel(report, comments = []) {
   });
 }
 
-export function shouldBlockContributor({ profile, report }) {
+export function shouldBlockContributor({ profile, report }: { profile: GitHubProfile; report: ContributorReport }): boolean {
   if (report.trusted || report.level !== 'high') return false;
   if (profile.type === 'Bot' || /\[bot\]$/i.test(profile.login ?? '')) return false;
   return report.aiReview?.classification === 'likely-automated' && report.aiReview.confidence >= 0.9;
 }
 
-function buildFacts(profile, events, authoredPullRequests, authoredIssues, organizationPullRequests, now) {
+function buildFacts(
+  profile: GitHubProfile,
+  events: unknown[],
+  authoredPullRequests: number,
+  authoredIssues: number,
+  organizationPullRequests: number,
+  now: Date,
+): ContributorFacts {
   return {
     accountAgeDays: accountAgeDays(profile.created_at, now),
     publicRepositories: profile.public_repos ?? 0,
